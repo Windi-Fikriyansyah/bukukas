@@ -4,6 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../core/app_colors.dart';
 import '../../core/utils.dart';
+import 'dart:io';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:csv/csv.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
 import '../../providers/app_provider.dart';
 import '../../models/transaction_model.dart';
 
@@ -46,6 +52,162 @@ class _TabLaporanState extends State<TabLaporan> {
       // bulanan
       return trxDate.year == _selectedDate.year && trxDate.month == _selectedDate.month;
     }
+  }
+
+  String _getDayName(int weekday) {
+    switch (weekday) {
+      case 1: return 'Sen';
+      case 2: return 'Sel';
+      case 3: return 'Rab';
+      case 4: return 'Kam';
+      case 5: return 'Jum';
+      case 6: return 'Sab';
+      case 7: return 'Min';
+      default: return '';
+    }
+  }
+
+  Future<void> _exportCSV(List<TransactionModel> transactions) async {
+    List<List<dynamic>> rows = [];
+    rows.add(["Tanggal", "Waktu", "Judul", "Kategori", "Tipe", "Jumlah", "Modal"]);
+    for (var t in transactions) {
+      rows.add([
+        DateFormat('yyyy-MM-dd').format(t.date),
+        DateFormat('HH:mm').format(t.date),
+        t.title,
+        t.category,
+        t.type,
+        t.amount,
+        t.modal
+      ]);
+    }
+    String csvString = csv.encode(rows);
+    final directory = await getTemporaryDirectory();
+    final path = "${directory.path}/Laporan_BukuKas_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv";
+    final file = File(path);
+    await file.writeAsString(csvString);
+    await Share.shareXFiles([XFile(path)], text: 'Laporan BukuKas');
+  }
+
+  Widget _buildChart(AppProvider provider) {
+    final baseDate = _selectedDate;
+    List<BarChartGroupData> barGroups = [];
+    
+    double maxY = 0;
+    
+    for (int i = 0; i < 7; i++) {
+      final date = baseDate.subtract(Duration(days: 6 - i));
+      double sumMasuk = 0;
+      double sumKeluar = 0;
+      
+      for (var t in provider.transactions) {
+        if (t.date.year == date.year && t.date.month == date.month && t.date.day == date.day) {
+          if (t.type == 'masuk') sumMasuk += t.amount;
+          else sumKeluar += t.amount;
+        }
+      }
+      
+      if (sumMasuk > maxY) maxY = sumMasuk;
+      if (sumKeluar > maxY) maxY = sumKeluar;
+      
+      barGroups.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: sumMasuk,
+              color: AppColors.green,
+              width: 8,
+              borderRadius: BorderRadius.circular(2),
+            ),
+            BarChartRodData(
+              toY: sumKeluar,
+              color: AppColors.red,
+              width: 8,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    if (maxY == 0) maxY = 10000;
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        maxY: maxY * 1.2,
+        barTouchData: BarTouchData(
+          enabled: true,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (group) => AppColors.ink,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              return BarTooltipItem(
+                Utils.formatRupiah(rod.toY),
+                const TextStyle(color: AppColors.paper, fontSize: 10, fontWeight: FontWeight.bold),
+              );
+            },
+          ),
+        ),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: maxY == 0 ? 1 : maxY / 4,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(color: AppColors.line, strokeWidth: 1, dashArray: [4, 4]);
+          },
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 42,
+              getTitlesWidget: (value, meta) {
+                if (value == 0) return const SizedBox();
+                String text = '';
+                if (value >= 1000000) {
+                  text = '${(value / 1000000).toStringAsFixed(1).replaceAll('.0', '')}jt';
+                } else if (value >= 1000) {
+                  text = '${(value / 1000).toStringAsFixed(0)}rb';
+                } else {
+                  text = value.toStringAsFixed(0);
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6.0),
+                  child: Text(
+                    text,
+                    style: GoogleFonts.spaceMono(fontSize: 9, color: AppColors.inkSoft),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index < 0 || index > 6) return const SizedBox();
+                final date = baseDate.subtract(Duration(days: 6 - index));
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    _getDayName(date.weekday),
+                    style: GoogleFonts.spaceMono(fontSize: 10, color: AppColors.inkSoft),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        barGroups: barGroups,
+      ),
+    );
   }
 
   String _getDateLabel() {
@@ -161,6 +323,46 @@ class _TabLaporanState extends State<TabLaporan> {
                           Text(Utils.formatRupiah(labaBersih), style: GoogleFonts.spaceMono(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.paper)),
                         ],
                       ),
+                    ),
+                    
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () => _exportCSV(filteredTrx),
+                      icon: const Icon(Icons.download, size: 18),
+                      label: const Text('Export CSV Periode Ini'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        foregroundColor: AppColors.inkSoft,
+                        elevation: 0,
+                        side: const BorderSide(color: AppColors.lineStrong, width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 30),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('TREN 7 HARI', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.inkSoft)),
+                        Row(
+                          children: [
+                            Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.green, shape: BoxShape.circle)),
+                            const SizedBox(width: 4),
+                            const Text('Masuk', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.inkSoft)),
+                            const SizedBox(width: 10),
+                            Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.red, shape: BoxShape.circle)),
+                            const SizedBox(width: 4),
+                            const Text('Keluar', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.inkSoft)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const Divider(color: AppColors.line, thickness: 1, height: 12),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      height: 200,
+                      child: _buildChart(provider),
                     ),
                     
                     const SizedBox(height: 30),
