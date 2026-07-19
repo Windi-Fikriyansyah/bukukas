@@ -6,6 +6,13 @@ import '../../core/app_colors.dart';
 import '../../core/utils.dart';
 import '../../providers/app_provider.dart';
 import '../../models/debt_model.dart';
+import '../../models/product_model.dart';
+
+class _SelectedProduct {
+  final ProductModel product;
+  int quantity;
+  _SelectedProduct(this.product, this.quantity);
+}
 
 class TabUtang extends StatefulWidget {
   const TabUtang({super.key});
@@ -22,6 +29,8 @@ class _TabUtangState extends State<TabUtang> with SingleTickerProviderStateMixin
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   DateTime? _dueDate;
+  
+  List<_SelectedProduct> _selectedProducts = [];
 
   late AnimationController _stampController;
   late Animation<double> _stampScale;
@@ -60,10 +69,23 @@ class _TabUtangState extends State<TabUtang> with SingleTickerProviderStateMixin
     }
   }
 
-  void _addDebt() {
+  Future<void> _addDebt() async {
     final name = _nameCtrl.text.trim();
-    final amount = double.tryParse(_amountCtrl.text) ?? 0;
+    double amount = double.tryParse(_amountCtrl.text) ?? 0;
     final note = _noteCtrl.text.trim();
+
+    String? productName;
+    double? productModal;
+
+    if (_isPiutang && _selectedProducts.isNotEmpty) {
+      productName = _selectedProducts.map((e) => '${e.quantity}x ${e.product.name}').join(', ');
+      productModal = _selectedProducts.fold<double>(0.0, (sum, e) => sum + (e.product.modal * e.quantity));
+      
+      // Jika amount kosong atau 0, otomatis isi dengan total harga jual
+      if (amount <= 0) {
+        amount = _selectedProducts.fold<double>(0.0, (sum, e) => sum + (e.product.price * e.quantity));
+      }
+    }
 
     if (name.isEmpty || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Isi nama dan jumlah yang valid.')));
@@ -77,20 +99,34 @@ class _TabUtangState extends State<TabUtang> with SingleTickerProviderStateMixin
       note: note,
       date: DateTime.now(),
       dueDate: !_isPiutang ? _dueDate : null,
+      productName: productName,
+      productModal: productModal,
     );
 
-    Provider.of<AppProvider>(context, listen: false).addDebt(debt);
+    try {
+      await Provider.of<AppProvider>(context, listen: false).addDebt(debt);
 
-    _nameCtrl.clear();
-    _amountCtrl.clear();
-    _noteCtrl.clear();
-    setState(() {
-      _dueDate = null;
-    });
+      if (mounted) {
+        _nameCtrl.clear();
+        _amountCtrl.clear();
+        _amountCtrl.clear();
+        _noteCtrl.clear();
+        setState(() {
+          _dueDate = null;
+          _selectedProducts.clear();
+        });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_isPiutang ? 'Piutang dicatat' : 'Utang Supplier dicatat'), backgroundColor: AppColors.green),
-    );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_isPiutang ? 'Piutang dicatat' : 'Utang Supplier dicatat'), backgroundColor: AppColors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: AppColors.red),
+        );
+      }
+    }
   }
 
   Future<void> _pickDueDate() async {
@@ -103,6 +139,130 @@ class _TabUtangState extends State<TabUtang> with SingleTickerProviderStateMixin
     if (picked != null) {
       setState(() => _dueDate = picked);
     }
+  }
+
+  void _showProductPicker(AppProvider provider) {
+    List<_SelectedProduct> tempSelected = List.from(_selectedProducts);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setStateModal) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: const BoxDecoration(
+                color: AppColors.paper,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 5,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(color: AppColors.lineStrong, borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  Text('Pilih Barang yang Diutang', style: GoogleFonts.fraunces(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.ink)),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: provider.products.isEmpty
+                        ? const Center(child: Text('Belum ada produk.'))
+                        : ListView.builder(
+                            itemCount: provider.products.length,
+                            itemBuilder: (context, index) {
+                              final p = provider.products[index];
+                              final selectedIdx = tempSelected.indexWhere((e) => e.product.id == p.id);
+                              final qty = selectedIdx >= 0 ? tempSelected[selectedIdx].quantity : 0;
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.line),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                          Text(Utils.formatRupiah(p.price), style: const TextStyle(color: AppColors.green, fontSize: 13)),
+                                        ],
+                                      ),
+                                    ),
+                                    if (qty == 0)
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          setStateModal(() {
+                                            tempSelected.add(_SelectedProduct(p, 1));
+                                          });
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: AppColors.ink,
+                                          minimumSize: const Size(60, 36),
+                                        ),
+                                        child: const Text('Tambah'),
+                                      )
+                                    else
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            onPressed: () {
+                                              setStateModal(() {
+                                                if (qty > 1) {
+                                                  tempSelected[selectedIdx].quantity--;
+                                                } else {
+                                                  tempSelected.removeAt(selectedIdx);
+                                                }
+                                              });
+                                            },
+                                            icon: const Icon(Icons.remove_circle_outline, color: AppColors.inkSoft),
+                                          ),
+                                          Text('$qty', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                                          IconButton(
+                                            onPressed: () {
+                                              setStateModal(() {
+                                                tempSelected[selectedIdx].quantity++;
+                                              });
+                                            },
+                                            icon: const Icon(Icons.add_circle_outline, color: AppColors.green),
+                                          ),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedProducts = tempSelected;
+                        if (_selectedProducts.isNotEmpty) {
+                          final totalHarga = _selectedProducts.fold(0.0, (sum, e) => sum + (e.product.price * e.quantity));
+                          _amountCtrl.text = totalHarga.toInt().toString();
+                        }
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: const Text('Selesai Memilih'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildSectionTitle(String title) {
@@ -279,6 +439,39 @@ class _TabUtangState extends State<TabUtang> with SingleTickerProviderStateMixin
                         ],
                       ],
                     ),
+                    if (_isPiutang) ...[
+                      const SizedBox(height: 14),
+                      const Text('PILIH BARANG (OPSIONAL)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.inkSoft)),
+                      const SizedBox(height: 5),
+                      InkWell(
+                        onTap: () => _showProductPicker(provider),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.lineStrong, width: 1.5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _selectedProducts.isEmpty
+                                      ? 'Pilih produk yang diutang...'
+                                      : _selectedProducts.map((e) => '${e.quantity}x ${e.product.name}').join(', '),
+                                  style: TextStyle(
+                                    color: _selectedProducts.isEmpty ? AppColors.inkSoft : AppColors.ink,
+                                    fontSize: 14,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Icon(Icons.shopping_bag_outlined, color: AppColors.inkSoft, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     const Text('CATATAN (OPSIONAL)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.inkSoft)),
                     const SizedBox(height: 5),
@@ -391,6 +584,14 @@ class _TabUtangState extends State<TabUtang> with SingleTickerProviderStateMixin
                       isPaid ? 'Lunas $tglStr' : '$tglStr${d.note.isNotEmpty ? ' · ${d.note}' : ''}',
                       style: const TextStyle(fontSize: 11, color: AppColors.inkSoft),
                     ),
+                    if (d.productName != null && d.productName!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Barang: ${d.productName}',
+                          style: const TextStyle(fontSize: 11, color: AppColors.inkSoft, fontStyle: FontStyle.italic),
+                        ),
+                      ),
                     const SizedBox(height: 6),
                     if (isPaid)
                       Container(

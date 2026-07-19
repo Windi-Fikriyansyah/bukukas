@@ -120,10 +120,16 @@ class AppProvider with ChangeNotifier {
 
     // Create Transaction
     final isPiutang = debt.type == 'piutang';
+    String title = isPiutang ? 'Pelunasan piutang — ' : 'Bayar utang — ';
+    title += debt.name;
+    if (debt.productName != null && debt.productName!.isNotEmpty) {
+      title += ' (${debt.productName})';
+    }
+
     final trx = TransactionModel(
-      title: (isPiutang ? 'Pelunasan piutang — ' : 'Bayar utang — ') + debt.name,
+      title: title,
       amount: debt.amount,
-      modal: 0,
+      modal: debt.productModal ?? 0.0,
       type: isPiutang ? 'masuk' : 'keluar',
       category: isPiutang ? 'Piutang' : 'Utang Supplier',
       date: DateTime.now(),

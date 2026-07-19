@@ -25,7 +25,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3, // version up for barcode
+      version: 4, // version up for piutang products
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -37,6 +37,7 @@ class DatabaseHelper {
     const realType = 'REAL NOT NULL';
     const intType = 'INTEGER NOT NULL';
     const textNullable = 'TEXT';
+    const realNullable = 'REAL';
 
     // Transactions Table
     await db.execute('''
@@ -74,7 +75,9 @@ CREATE TABLE debts (
   date $textType,
   dueDate $textNullable,
   isPaid $intType,
-  paidDate $textNullable
+  paidDate $textNullable,
+  productName $textNullable,
+  productModal $realNullable
 )
 ''');
   }
@@ -87,6 +90,10 @@ CREATE TABLE debts (
     }
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE products ADD COLUMN barcode TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE debts ADD COLUMN productName TEXT');
+      await db.execute('ALTER TABLE debts ADD COLUMN productModal REAL');
     }
   }
 

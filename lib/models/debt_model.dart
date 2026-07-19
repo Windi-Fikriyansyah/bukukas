@@ -8,6 +8,8 @@ class DebtModel {
   final DateTime? dueDate;
   final bool isPaid;
   final DateTime? paidDate;
+  final String? productName;
+  final double? productModal;
 
   DebtModel({
     this.id,
@@ -19,6 +21,8 @@ class DebtModel {
     this.dueDate,
     this.isPaid = false,
     this.paidDate,
+    this.productName,
+    this.productModal,
   });
 
   Map<String, dynamic> toMap() {
@@ -32,6 +36,8 @@ class DebtModel {
       'dueDate': dueDate?.toIso8601String(),
       'isPaid': isPaid ? 1 : 0,
       'paidDate': paidDate?.toIso8601String(),
+      'productName': productName,
+      'productModal': productModal,
     };
   }
 
@@ -46,6 +52,8 @@ class DebtModel {
       dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate']) : null,
       isPaid: map['isPaid'] == 1,
       paidDate: map['paidDate'] != null ? DateTime.parse(map['paidDate']) : null,
+      productName: map['productName'],
+      productModal: map['productModal'] != null ? (map['productModal'] as num).toDouble() : null,
     );
   }
 }
