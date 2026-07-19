@@ -436,6 +436,26 @@ class _TabLaporanState extends State<TabLaporan> {
         padding: const EdgeInsets.only(right: 20),
         child: const Icon(Icons.delete, color: Colors.white),
       ),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Hapus Transaksi?'),
+            content: const Text('Apakah Anda yakin ingin menghapus transaksi ini?'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Batal', style: TextStyle(color: AppColors.inkSoft)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Hapus', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+      },
       onDismissed: (_) {
         if (t.id != null) provider.deleteTransaction(t.id!);
       },
